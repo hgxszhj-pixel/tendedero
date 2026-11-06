@@ -1,10 +1,10 @@
-// Checks the reading of the capture apps: the ini file Snipaste keeps its
-// settings in, the names the apps give their files, and the folders that
-// are watched for them.
-// Usage: swiftc -parse-as-library Sources/Tendedero/CaptureApps.swift \
-//            scripts/check-capture-apps.swift -o /tmp/check-capture-apps \
-//            && /tmp/check-capture-apps
+// Checks the rules for the apps that take screenshots: the ini file Snipaste
+// keeps its settings in, the names the apps give their files, and the folders
+// that are watched for them.
+//
+// Usage: swift run --package-path TendederoCore CaptureAppsCheck
 import Foundation
+import TendederoCore
 
 @main
 struct CheckCaptureApps {
@@ -72,26 +72,43 @@ struct CheckCaptureApps {
         expect(CaptureApps.matches("CleanShot 2026-11-06 at 14.39.00.png", prefixes: ["CleanShot"]), true, "match: CleanShot file")
         expect(CaptureApps.matches("Snipaste_2026-11-06_14-39-00.jpg", prefixes: []), false, "match: nothing to match")
 
-        // Pictures land in the usual folders.
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        expect(CaptureApps.standardFolders.map(\.lastPathComponent),
-               ["Desktop", "Pictures", "Downloads"], "folders: where pictures land")
+        // The machine the app runs on: where apps are kept, and where
+        // pictures land when nothing says otherwise. The folders are made
+        // here, so the check works on any system.
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("tendedero-capture-check", isDirectory: true)
+        try? fm.removeItem(at: root)
+        try? fm.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: root) }
+        let desktop = root.appendingPathComponent("Desktop", isDirectory: true)
+        let pictures = root.appendingPathComponent("Pictures", isDirectory: true)
+        try? fm.createDirectory(at: desktop, withIntermediateDirectories: true)
+        try? fm.createDirectory(at: pictures, withIntermediateDirectories: true)
+        let platform = CapturePlatform(isInstalled: { $0 == "Snipaste" },
+                                       standardFolders: [desktop, pictures])
 
-        // An app's own settings say which folder it uses, on top of those.
-        let folders = CaptureApps.folders(settings: ["last_save_folder": "/Users/someone/Pictures"])
-        expect(folders.count, 4, "folders: the usual ones and the one the settings name")
-        expectContains(folders.map(\.path), home.appendingPathComponent("Pictures").path,
-                       "folders: the usual ones are there")
+        // The apps that are installed are the ones the machine says are.
+        expect(CaptureApps.installed(in: platform).map(\.id), ["snipaste"], "apps: the ones the machine says are")
+        expectContains(CaptureApps.installed(in: platform).first?.prefixes ?? [],
+                       "Snipaste ", "apps: the names they give their files")
+
+        // The folders to watch: the ones pictures land in, and the ones the
+        // app's own settings name.
+        let usual = CaptureApps.folders(settings: [:], in: platform)
+        expect(usual.map(\.standardizedFileURL.path),
+               [desktop, pictures].map(\.standardizedFileURL.path), "folders: where pictures land")
+        let folders = CaptureApps.folders(settings: ["last_save_folder": "/Users/someone/Pictures"], in: platform)
+        expect(folders.count, 3, "folders: the usual ones and the one the settings name")
+        expectContains(folders.map(\.path), desktop.path, "folders: the usual ones are there")
         expectContains(folders.map(\.path), "/Users/someone/Pictures",
                        "folders: the one the settings name is there")
 
         // A folder is watched once, and every app that is turned on is looked
         // for in it.
-        let pictures = URL(fileURLWithPath: "/Users/someone/Pictures", isDirectory: true)
-        let desktop = URL(fileURLWithPath: "/Users/someone/Desktop", isDirectory: true)
+        let other = URL(fileURLWithPath: "/Users/someone/Desktop", isDirectory: true)
         let plan = CaptureApps.watchPlan(for: [
             CaptureApp(id: "a", name: "A", folders: [pictures], prefixes: ["A_"]),
-            CaptureApp(id: "b", name: "B", folders: [pictures, desktop], prefixes: ["B_"]),
+            CaptureApp(id: "b", name: "B", folders: [pictures, other], prefixes: ["B_"]),
         ])
         expect(plan.count, 2, "plan: one entry per folder")
         let pictureEntry = plan.first { $0.folder.standardizedFileURL.path == pictures.standardizedFileURL.path }

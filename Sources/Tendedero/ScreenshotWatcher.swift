@@ -1,4 +1,5 @@
 import Foundation
+import TendederoCore
 
 /// Watches the folder macOS saves screenshots to and reports new ones.
 /// Tendedero never takes screenshots itself: you keep your usual shortcut
@@ -64,7 +65,7 @@ final class ScreenshotWatcher {
     /// folder of its own any picture counts.
     private static func defaultAccepts(for folder: URL) -> Acceptance {
         guard folder.standardizedFileURL.path == desktop.standardizedFileURL.path else { return .anyImage }
-        return .screenCapture(names: Set(CaptureApps.enabledPrefixes))
+        return .screenCapture(names: Set(CaptureApps.enabledPrefixes(in: .macOS)))
     }
 
     static func screenshotFolder() -> URL {

@@ -10,8 +10,8 @@ tell its own screenshots apart from anything else on the Desktop. Other apps
 write their own files without that tag, so they are found by the folder they
 save to and by the names they give their files.
 
-`Sources/Tendedero/CaptureApps.swift` holds what Tendedero knows about them.
-Each app is one entry in `CaptureApps.known`:
+`TendederoCore/Sources/TendederoCore/CaptureApps.swift` holds what Tendedero
+knows about them. Each app is one entry in `CaptureApps.known`:
 
 | field | what it says |
 |---|---|
@@ -72,24 +72,50 @@ Tendedero is a macOS app: it draws a line under the menu bar, takes over the
 system screenshot folder, and reads the tag macOS puts on its own
 screenshots. Those are macOS things, so the app is macOS only.
 
-The capture app knowledge is not: `CaptureApps.swift` is Foundation alone,
-with no AppKit and no macOS-only API. It is the part that could be carried
-to another platform; the watchers and the line would have to be written
-again.
+The capture app knowledge is not. It is a package of its own,
+`TendederoCore`, with no AppKit and no macOS-only API in it: `import
+Foundation` and nothing else. It is the part that could be carried to
+another system; the watchers and the line would have to be written again.
+
+Two things are not the same on every system, so the host says them
+(`CapturePlatform`): where the apps are kept, and where pictures land when
+nothing says otherwise. The macOS answers are in
+`Sources/Tendedero/CapturePlatform.swift`.
+
+## The core package
+
+```
+TendederoCore/
+  Package.swift
+  Sources/TendederoCore/       the rules
+  Sources/CaptureAppsCheck/    the checks
+  scripts/check-portable.sh    fails if a macOS-only thing creeps in
+```
+
+The app depends on it by path, so the rules are built once and used by the
+app:
+
+```swift
+dependencies: [.package(path: "TendederoCore")]
+```
+
+The package says nothing about platforms, and `check-portable.sh` fails when
+a macOS-only import or API is used in it. That is what keeps "it can be
+built for another system" true rather than a claim.
 
 ## Checking
 
 ```sh
-swiftc -parse-as-library Sources/Tendedero/CaptureApps.swift \
-    scripts/check-capture-apps.swift -o /tmp/tendedero-capture-check
-/tmp/tendedero-capture-check
+swift run --package-path TendederoCore CaptureAppsCheck
+bash TendederoCore/scripts/check-portable.sh
 swift scripts/check-strings.swift
 ```
 
 The first checks the reading of the ini files, the names the apps give their
-files, and the folders that are watched for them. The second checks the
-eleven languages. `XCTest` is not part of the Command Line Tools, so the
-checks are plain scripts that exit non-zero when something is wrong.
+files, and the folders that are watched for them. The second fails when the
+core uses something only macOS has. The third checks the eleven languages.
+`XCTest` is not part of the Command Line Tools, so the checks are plain
+programs that exit non-zero when something is wrong.
 
 ## Building
 

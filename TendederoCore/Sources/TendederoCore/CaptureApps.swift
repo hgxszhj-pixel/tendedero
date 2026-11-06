@@ -1,26 +1,11 @@
 import Foundation
 
-/// Another app that takes screenshots and writes the pictures itself.
+/// What Tendedero knows about the apps that take screenshots.
 ///
-/// macOS tags the files it takes with an extended attribute, so Tendedero can
-/// tell its own screenshots apart from anything else on the Desktop. These
-/// apps write their own files without that tag, so Tendedero has to learn
-/// what they call their files. Where they keep their pictures is known:
-/// pictures land in the usual folders, and the apps that keep a setting
-/// file say which folder they use.
-struct CaptureApp {
-    /// A short name, to remember whether the user turned it on.
-    let id: String
-    /// The name the app is known by, shown in the menu.
-    let name: String
-    /// The folders its pictures may be in.
-    let folders: [URL]
-    /// The names it gives its files, so they can be told apart from other
-    /// pictures in a folder that holds more than screenshots.
-    let prefixes: [String]
-}
-
-enum CaptureApps {
+/// The rules are the same on every system. The two things that are not — where
+/// apps are kept, and where pictures land when nothing says otherwise — are
+/// given by the host (see `CapturePlatform`).
+public enum CaptureApps {
     private static let disabledKey = "captureAppsDisabled"
 
     // MARK: What Tendedero knows about each app
@@ -57,16 +42,16 @@ enum CaptureApps {
 
     // MARK: Finding the apps
 
-    /// The apps that are installed on this Mac, with the folders and the file
-    /// names they use.
-    static func installed() -> [CaptureApp] {
+    /// The apps that are installed on this machine, with the folders and the
+    /// file names they use.
+    public static func installed(in platform: CapturePlatform) -> [CaptureApp] {
         known.compactMap { app -> CaptureApp? in
-            guard app.appNames.contains(where: isInstalled) else { return nil }
+            guard app.appNames.contains(where: platform.isInstalled) else { return nil }
             let settings = app.settings()
             return CaptureApp(
                 id: app.id,
                 name: app.name,
-                folders: unique(folders(settings: settings)).filter(isFolder),
+                folders: unique(folders(settings: settings, in: platform)).filter(isFolder),
                 prefixes: unique(prefixes(name: app.name,
                                          extra: app.extraPrefixes,
                                          settings: settings)))
@@ -74,30 +59,30 @@ enum CaptureApps {
     }
 
     /// The apps that are installed and that the user wants.
-    static func enabled() -> [CaptureApp] {
+    public static func enabled(in platform: CapturePlatform) -> [CaptureApp] {
         let off = Set(disabledIDs)
-        return installed().filter { !off.contains($0.id) }
+        return installed(in: platform).filter { !off.contains($0.id) }
     }
 
     /// The names the capture apps that are turned on give their files.
-    static var enabledPrefixes: [String] {
-        enabled().flatMap(\.prefixes)
+    public static func enabledPrefixes(in platform: CapturePlatform) -> [String] {
+        enabled(in: platform).flatMap(\.prefixes)
     }
 
     /// The apps the user turned off. Every app that is installed is on until
     /// the user turns one off, so an app installed later is on as well.
-    static var disabledIDs: [String] {
+    public static var disabledIDs: [String] {
         get { UserDefaults.standard.stringArray(forKey: disabledKey) ?? [] }
         set { UserDefaults.standard.set(newValue, forKey: disabledKey) }
     }
 
     /// Whether a capture app is turned on.
-    static func isEnabled(_ id: String) -> Bool {
+    public static func isEnabled(_ id: String) -> Bool {
         !disabledIDs.contains(id)
     }
 
     /// Turns a capture app on or off.
-    static func setEnabled(_ id: String, _ on: Bool) {
+    public static func setEnabled(_ id: String, _ on: Bool) {
         var off = disabledIDs
         if on {
             off.removeAll { $0 == id }
@@ -108,24 +93,16 @@ enum CaptureApps {
     }
 
     /// Whether a file name is one a capture app gave.
-    static func matches(_ name: String, prefixes: Set<String>) -> Bool {
+    public static func matches(_ name: String, prefixes: Set<String>) -> Bool {
         prefixes.contains { name.hasPrefix($0) }
     }
 
     // MARK: Where to look
 
-    /// The folders where pictures land when nothing says otherwise.
-    static var standardFolders: [URL] {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        return ["Desktop", "Pictures", "Downloads"].map {
-            home.appendingPathComponent($0, isDirectory: true)
-        }
-    }
-
     /// The folders an app's pictures may be in: the ones pictures land in
     /// anyway, and the ones its settings name.
-    static func folders(settings: [String: String]) -> [URL] {
-        var folders = standardFolders
+    public static func folders(settings: [String: String], in platform: CapturePlatform) -> [URL] {
+        var folders = platform.standardFolders
         if let folder = settings["last_save_folder"], !folder.isEmpty {
             folders.append(folderURL(folder))
         }
@@ -139,12 +116,12 @@ enum CaptureApps {
     /// The folders to watch for pictures that other apps took, and the names
     /// to take there. A folder is watched once, and every app that is turned
     /// on is looked for in it.
-    static func watchPlan() -> [(folder: URL, prefixes: Set<String>)] {
-        watchPlan(for: enabled())
+    public static func watchPlan(in platform: CapturePlatform) -> [(folder: URL, prefixes: Set<String>)] {
+        watchPlan(for: enabled(in: platform))
     }
 
     /// The same, for the given apps.
-    static func watchPlan(for apps: [CaptureApp]) -> [(folder: URL, prefixes: Set<String>)] {
+    public static func watchPlan(for apps: [CaptureApp]) -> [(folder: URL, prefixes: Set<String>)] {
         var byPath: [String: (folder: URL, prefixes: Set<String>)] = [:]
         for app in apps {
             for folder in app.folders {
@@ -161,7 +138,7 @@ enum CaptureApps {
 
     /// The names an app gives its files: the ones it names after itself, the
     /// ones it keeps its own way, and what its settings say.
-    static func prefixes(name: String, extra: [String], settings: [String: String]) -> [String] {
+    public static func prefixes(name: String, extra: [String], settings: [String: String]) -> [String] {
         var prefixes = namedPrefixes(name) + extra
         if let path = settings["quick_save_path"], !path.isEmpty {
             let expanded = (path as NSString).expandingTildeInPath
@@ -178,17 +155,8 @@ enum CaptureApps {
     /// The names an app gives its files when it names them after itself:
     /// `Snipaste 2026-11-06.png`, `Snipaste_2026-11-06.png`. The separator is
     /// part of the name, so `Kap` does not take `Kaplan.jpg`.
-    static func namedPrefixes(_ name: String) -> [String] {
+    public static func namedPrefixes(_ name: String) -> [String] {
         [" ", "_", "-"].map { name + $0 }
-    }
-
-    /// Whether an app with this bundle name is installed.
-    private static func isInstalled(_ appName: String) -> Bool {
-        let fm = FileManager.default
-        for directory in ["/Applications", fm.homeDirectoryForCurrentUser.path + "/Applications"] {
-            if fm.fileExists(atPath: directory + "/" + appName + ".app") { return true }
-        }
-        return false
     }
 
     /// Snipaste keeps its settings in an ini file in the home folder.
@@ -201,7 +169,7 @@ enum CaptureApps {
 
     /// Reads an ini file: lines of `key=value` under `[Section]` headers. Only
     /// the keys are kept; the section a key is in makes no difference here.
-    static func parseIni(_ text: String) -> [String: String] {
+    public static func parseIni(_ text: String) -> [String: String] {
         var values: [String: String] = [:]
         for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
             let line = line.trimmingCharacters(in: .whitespaces)
@@ -218,7 +186,7 @@ enum CaptureApps {
     /// The fixed part of a file name pattern: what comes before the first
     /// `$`. Snipaste writes `Snipaste_$yyyy-MM-dd_HH-mm-ss$.jpg`, so the
     /// name of its files starts with `Snipaste_`.
-    static func patternPrefix(_ pattern: String) -> String? {
+    public static func patternPrefix(_ pattern: String) -> String? {
         let parts = pattern.split(separator: "$", maxSplits: 1, omittingEmptySubsequences: false)
         let head = parts.first.map(String.init)?.trimmingCharacters(in: .whitespaces) ?? ""
         return head.isEmpty ? nil : head

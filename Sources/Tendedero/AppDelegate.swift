@@ -4,6 +4,7 @@ import Combine
 import Quartz
 import ServiceManagement
 import SwiftUI
+import TendederoCore
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
@@ -205,7 +206,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             watched.insert(ScreenshotWatcher.desktop.standardizedFileURL.path)
         }
         for folder in Self.extraFolders { watched.insert(folder.standardizedFileURL.path) }
-        for plan in CaptureApps.watchPlan() {
+        for plan in CaptureApps.watchPlan(in: .macOS) {
             let path = plan.folder.standardizedFileURL.path
             guard !watched.contains(path) else { continue }
             watched.insert(path)
@@ -949,7 +950,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let captureItem = NSMenuItem(title: L("Capture apps"), action: nil, keyEquivalent: "")
         let captureMenu = NSMenu()
         captureMenu.autoenablesItems = false
-        let apps = CaptureApps.installed()
+        let apps = CaptureApps.installed(in: .macOS)
         if apps.isEmpty {
             let none = ClosureMenuItem(L("No capture apps found")) { }
             none.isEnabled = false
