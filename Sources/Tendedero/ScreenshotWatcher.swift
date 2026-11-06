@@ -4,10 +4,20 @@ import Foundation
 /// Tendedero never takes screenshots itself: you keep your usual shortcut
 /// (or CleanShot, or anything else) and the line just picks them up.
 final class ScreenshotWatcher {
+    /// What a file has to be for the line to take it.
+    enum Acceptance {
+        /// Any picture. For a folder that holds nothing but captures.
+        case anyImage
+        /// What macOS took, or what a capture app wrote: the file carries
+        /// macOS's own tag, or its name is one a capture app gives.
+        case screenCapture(names: Set<String>)
+        /// Only pictures whose name starts with one of these.
+        case named(Set<String>)
+    }
+
     let folder: URL
-    /// On the Desktop we only accept real screenshots, tagged by macOS with an
-    /// extended attribute. In a dedicated folder, any image counts.
-    private let onlyTaggedScreenshots: Bool
+    /// What a file has to be for this folder.
+    private let accepts: Acceptance
     /// Screen recordings carry no tag, so they are only picked up in
     /// Tendedero's own folder, where nothing else is saved.
     private let acceptsRecordings: Bool
@@ -38,15 +48,23 @@ final class ScreenshotWatcher {
     static let desktop = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop")
 
     /// Watches the folder macOS saves screenshots to, or a given folder.
-    /// `anyImage` takes every new image even on the Desktop, for a folder
-    /// the user chose to watch.
-    init(folder: URL? = nil, anyImage: Bool = false, onNew: @escaping (URL) -> Void, onChange: @escaping () -> Void) {
+    /// `accepts` says what a file has to be; by default the Desktop takes
+    /// only what macOS took, and any other folder takes every image.
+    init(folder: URL? = nil, accepts: Acceptance? = nil, onNew: @escaping (URL) -> Void, onChange: @escaping () -> Void) {
         self.onNew = onNew
         self.onChange = onChange
-        self.folder = folder ?? Self.screenshotFolder()
-        onlyTaggedScreenshots = !anyImage
-            && self.folder.standardizedFileURL.path == Self.desktop.standardizedFileURL.path
-        acceptsRecordings = self.folder.standardizedFileURL.path == Inbox.folder.standardizedFileURL.path
+        let folder = folder ?? Self.screenshotFolder()
+        self.folder = folder
+        self.accepts = accepts ?? Self.defaultAccepts(for: folder)
+        acceptsRecordings = folder.standardizedFileURL.path == Inbox.folder.standardizedFileURL.path
+    }
+
+    /// On the Desktop only what macOS took hangs, plus what a capture app
+    /// wrote: those files carry no tag, but their names give them away. In a
+    /// folder of its own any picture counts.
+    private static func defaultAccepts(for folder: URL) -> Acceptance {
+        guard folder.standardizedFileURL.path == desktop.standardizedFileURL.path else { return .anyImage }
+        return .screenCapture(names: Set(CaptureApps.enabledPrefixes))
     }
 
     static func screenshotFolder() -> URL {
@@ -287,7 +305,14 @@ final class ScreenshotWatcher {
     private func isCandidate(_ url: URL) -> Bool {
         if isRecording(url) { return acceptsRecordings }
         guard Self.imageExtensions.contains(url.pathExtension.lowercased()) else { return false }
-        return onlyTaggedScreenshots ? isScreenCapture(url) : true
+        switch accepts {
+        case .anyImage:
+            return true
+        case .screenCapture(let names):
+            return isScreenCapture(url) || CaptureApps.matches(url.lastPathComponent, prefixes: names)
+        case .named(let prefixes):
+            return CaptureApps.matches(url.lastPathComponent, prefixes: prefixes)
+        }
     }
 
     private func isScreenCapture(_ url: URL) -> Bool {

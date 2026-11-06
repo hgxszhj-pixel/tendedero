@@ -18,6 +18,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Folders chosen in "Also watch folders", like the one another
     /// screenshot app saves to.
     private var folderWatchers: [ScreenshotWatcher] = []
+    /// The folders the other screenshot apps save to, like Snipaste.
+    private var captureWatchers: [ScreenshotWatcher] = []
     private var clipboardWatcher: ClipboardWatcher!
     private var signalSources: [DispatchSourceSignal] = []
     private var hotKey: HotKey?
@@ -164,6 +166,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         watcher?.stop()
         safetyWatcher?.stop()
         safetyWatcher = nil
+        captureWatchers.forEach { $0.stop() }
+        captureWatchers = []
         watcher = ScreenshotWatcher(
             onNew: { [weak self] url in self?.hangCapture(url) },
             onChange: { [weak self] in self?.line.prune() })
@@ -185,11 +189,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // image both report hangs once.
         for folder in Self.extraFolders {
             let extra = ScreenshotWatcher(
-                folder: folder, anyImage: true,
+                folder: folder, accepts: .anyImage,
                 onNew: { [weak self] url in self?.hangCapture(url) },
                 onChange: { [weak self] in self?.line.prune() })
             extra.start()
             folderWatchers.append(extra)
+        }
+        // The folders another screenshot app saves to. Its files carry no tag
+        // from macOS, so only the names that app gives are taken.
+        var watched = Set([watcher.folder.standardizedFileURL.path,
+                           ScreenshotWatcher.desktop.standardizedFileURL.path])
+        for folder in Self.extraFolders { watched.insert(folder.standardizedFileURL.path) }
+        for app in CaptureApps.enabled() {
+            for folder in app.folders {
+                let path = folder.standardizedFileURL.path
+                guard !watched.contains(path) else { continue }
+                watched.insert(path)
+                let capture = ScreenshotWatcher(
+                    folder: folder, accepts: .named(Set(app.prefixes)),
+                    onNew: { [weak self] url in self?.hangCapture(url) },
+                    onChange: { [weak self] in self?.line.prune() })
+                capture.start()
+                captureWatchers.append(capture)
+            }
         }
     }
 
@@ -222,6 +244,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard panel.runModal() == .OK, let url = panel.url, Self.extraFolders.count < Self.maxExtraFolders,
               !Self.extraFolders.contains(where: { $0.standardizedFileURL == url.standardizedFileURL }) else { return }
         Self.extraFolders.append(url)
+        startWatcher()
+    }
+
+    /// Turns a capture app on or off. Its folders stop being watched when it
+    /// is off, and its files stop hanging on the line.
+    private func toggleCaptureApp(_ id: String) {
+        CaptureApps.setEnabled(id, !CaptureApps.isEnabled(id))
         startWatcher()
     }
 
@@ -913,6 +942,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         folderItem.submenu = folderMenu
         menu.addItem(folderItem)
+
+        let captureItem = NSMenuItem(title: L("Capture apps"), action: nil, keyEquivalent: "")
+        let captureMenu = NSMenu()
+        captureMenu.autoenablesItems = false
+        let apps = CaptureApps.installed()
+        if apps.isEmpty {
+            let none = ClosureMenuItem(L("No capture apps found")) { }
+            none.isEnabled = false
+            captureMenu.addItem(none)
+        } else {
+            for app in apps {
+                let item = ClosureMenuItem(app.name) { [weak self] in
+                    self?.toggleCaptureApp(app.id)
+                }
+                item.state = CaptureApps.isEnabled(app.id) ? .on : .off
+                captureMenu.addItem(item)
+            }
+        }
+        captureItem.submenu = captureMenu
+        menu.addItem(captureItem)
 
         let keepItem = NSMenuItem(title: L("Keep on line"), action: nil, keyEquivalent: "")
         let keeps = NSMenu()

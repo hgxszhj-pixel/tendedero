@@ -23,6 +23,8 @@
 "%d photos" = "%d枚";
 "Also watch folders" = "フォルダも監視";
 "Add Folder…" = "フォルダを追加…";
+"Capture apps" = "キャプチャアプリ";
+"No capture apps found" = "キャプチャアプリが見つかりません";
 "Stop Watching" = "監視を停止";
 "Watch" = "監視";
 "New images saved to this folder will hang on the line." = "このフォルダに保存された新しい画像がロープに吊るされます。";

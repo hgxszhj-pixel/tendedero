@@ -25,6 +25,8 @@
 "%d photos" = "%d फ़ोटो";
 "Also watch folders" = "फ़ोल्डर पर भी नज़र रखें";
 "Add Folder…" = "फ़ोल्डर जोड़ें…";
+"Capture apps" = "कैप्चर ऐप्स";
+"No capture apps found" = "कोई कैप्चर ऐप नहीं मिला";
 "Stop Watching" = "नज़र रखना बंद करें";
 "Watch" = "नज़र रखें";
 "New images saved to this folder will hang on the line." = "इस फ़ोल्डर में सेव होने वाली नई तस्वीरें रस्सी पर टँग जाएँगी।";

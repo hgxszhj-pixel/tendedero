@@ -23,6 +23,8 @@
 "%d photos" = "%d fotos";
 "Also watch folders" = "Vigilar también carpetas";
 "Add Folder…" = "Añadir carpeta…";
+"Capture apps" = "Apps de captura";
+"No capture apps found" = "No se encontraron apps de captura";
 "Stop Watching" = "Dejar de vigilar";
 "Watch" = "Vigilar";
 "New images saved to this folder will hang on the line." = "Las imágenes nuevas que se guarden en esta carpeta se colgarán en la cuerda.";

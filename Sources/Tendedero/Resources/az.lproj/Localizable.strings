@@ -25,6 +25,8 @@
 "%d photos" = "%d şəkil";
 "Also watch folders" = "Qovluqları da izlə";
 "Add Folder…" = "Qovluq əlavə et…";
+"Capture apps" = "Ekran görüntüsü tətbiqləri";
+"No capture apps found" = "Ekran görüntüsü tətbiqi tapılmadı";
 "Stop Watching" = "İzləməyi dayandır";
 "Watch" = "İzlə";
 "New images saved to this folder will hang on the line." = "Bu qovluğa saxlanan yeni şəkillər ipdən asılacaq.";

@@ -23,6 +23,8 @@
 "%d photos" = "%d fotoğraf";
 "Also watch folders" = "Klasörleri de izle";
 "Add Folder…" = "Klasör ekle…";
+"Capture apps" = "Ekran görüntüsü uygulamaları";
+"No capture apps found" = "Ekran görüntüsü uygulaması bulunamadı";
 "Stop Watching" = "İzlemeyi durdur";
 "Watch" = "İzle";
 "New images saved to this folder will hang on the line." = "Bu klasöre kaydedilen yeni görseller ipe asılır.";
