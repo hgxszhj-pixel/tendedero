@@ -1,21 +1,22 @@
 import Foundation
 
-/// Other apps that take screenshots and write the pictures themselves.
+/// Another app that takes screenshots and writes the pictures itself.
 ///
 /// macOS tags the files it takes with an extended attribute, so Tendedero can
 /// tell its own screenshots apart from anything else on the Desktop. These
 /// apps write their own files without that tag, so Tendedero has to learn
-/// where they save them and what they call them. Otherwise their captures
-/// never reach the line.
+/// what they call their files. Where they keep their pictures is known:
+/// pictures land in the usual folders, and the apps that keep a setting
+/// file say which folder they use.
 struct CaptureApp {
     /// A short name, to remember whether the user turned it on.
     let id: String
     /// The name the app is known by, shown in the menu.
     let name: String
-    /// The folders the app saves to. Only the ones that exist are watched.
+    /// The folders its pictures may be in.
     let folders: [URL]
-    /// The names the app gives its files, so they can be told apart from
-    /// other pictures in a folder that holds more than screenshots.
+    /// The names it gives its files, so they can be told apart from other
+    /// pictures in a folder that holds more than screenshots.
     let prefixes: [String]
 }
 
@@ -31,46 +32,27 @@ enum CaptureApps {
         let name: String
         /// The bundle names to look for, newest first.
         let appNames: [String]
-        /// Where the app saves by default.
-        let folders: [URL]
-        /// The names it gives its files.
-        let prefixes: [String]
+        /// The names it gives its files that are not its own name.
+        let extraPrefixes: [String]
         /// Reads the app's own settings, when they are kept where we know.
         let settings: () -> [String: String]
     }
 
-    private static func pictures(_ name: String) -> URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Pictures", isDirectory: true)
-            .appendingPathComponent(name, isDirectory: true)
-    }
-
     private static let known: [Known] = [
-        Known(id: "snipaste", name: "Snipaste",
-              appNames: ["Snipaste"],
-              folders: [pictures("Snipaste")],
-              prefixes: ["Snipaste_"],
-              settings: snipasteSettings),
-        Known(id: "cleanshot", name: "CleanShot X",
-              appNames: ["CleanShot X", "CleanShot"],
-              folders: [pictures("CleanShot X")],
-              prefixes: ["CleanShot"],
-              settings: { [String: String]() }),
-        Known(id: "shottr", name: "Shottr",
-              appNames: ["Shottr"],
-              folders: [pictures("Shottr")],
-              prefixes: ["Shottr"],
-              settings: { [String: String]() }),
-        Known(id: "pixpin", name: "PixPin",
-              appNames: ["PixPin"],
-              folders: [pictures("PixPin")],
-              prefixes: ["PixPin"],
-              settings: { [String: String]() }),
-        Known(id: "kap", name: "Kap",
-              appNames: ["Kap"],
-              folders: [pictures("Kap")],
-              prefixes: ["Screen Shot"],
-              settings: { [String: String]() }),
+        Known(id: "snipaste", name: "Snipaste", appNames: ["Snipaste"],
+              extraPrefixes: [], settings: snipasteSettings),
+        Known(id: "cleanshot", name: "CleanShot X", appNames: ["CleanShot X", "CleanShot"],
+              extraPrefixes: ["CleanShot "], settings: { [String: String]() }),
+        Known(id: "shottr", name: "Shottr", appNames: ["Shottr"],
+              extraPrefixes: [], settings: { [String: String]() }),
+        Known(id: "pixpin", name: "PixPin", appNames: ["PixPin"],
+              extraPrefixes: [], settings: { [String: String]() }),
+        Known(id: "kap", name: "Kap", appNames: ["Kap"],
+              extraPrefixes: ["Screen Shot "], settings: { [String: String]() }),
+        Known(id: "monosnap", name: "Monosnap", appNames: ["Monosnap"],
+              extraPrefixes: [], settings: { [String: String]() }),
+        Known(id: "lightshot", name: "Lightshot", appNames: ["Lightshot"],
+              extraPrefixes: [], settings: { [String: String]() }),
     ]
 
     // MARK: Finding the apps
@@ -80,27 +62,14 @@ enum CaptureApps {
     static func installed() -> [CaptureApp] {
         known.compactMap { app -> CaptureApp? in
             guard app.appNames.contains(where: isInstalled) else { return nil }
-            var folders = app.folders
-            var prefixes = app.prefixes
             let settings = app.settings()
-            if let folder = settings["last_save_folder"], !folder.isEmpty {
-                folders.append(folderURL(folder))
-            }
-            if let path = settings["quick_save_path"], !path.isEmpty {
-                let expanded = (path as NSString).expandingTildeInPath
-                folders.append(URL(fileURLWithPath: expanded).deletingLastPathComponent())
-                if let prefix = patternPrefix(URL(fileURLWithPath: expanded).lastPathComponent) {
-                    prefixes.append(prefix)
-                }
-            }
-            if let pattern = settings["file_name_pattern"], let prefix = patternPrefix(pattern) {
-                prefixes.append(prefix)
-            }
             return CaptureApp(
                 id: app.id,
                 name: app.name,
-                folders: unique(folders).filter(isFolder),
-                prefixes: unique(prefixes))
+                folders: unique(folders(settings: settings)).filter(isFolder),
+                prefixes: unique(prefixes(name: app.name,
+                                         extra: app.extraPrefixes,
+                                         settings: settings)))
         }
     }
 
@@ -143,7 +112,75 @@ enum CaptureApps {
         prefixes.contains { name.hasPrefix($0) }
     }
 
+    // MARK: Where to look
+
+    /// The folders where pictures land when nothing says otherwise.
+    static var standardFolders: [URL] {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        return ["Desktop", "Pictures", "Downloads"].map {
+            home.appendingPathComponent($0, isDirectory: true)
+        }
+    }
+
+    /// The folders an app's pictures may be in: the ones pictures land in
+    /// anyway, and the ones its settings name.
+    static func folders(settings: [String: String]) -> [URL] {
+        var folders = standardFolders
+        if let folder = settings["last_save_folder"], !folder.isEmpty {
+            folders.append(folderURL(folder))
+        }
+        if let path = settings["quick_save_path"], !path.isEmpty {
+            let expanded = (path as NSString).expandingTildeInPath
+            folders.append(URL(fileURLWithPath: expanded).deletingLastPathComponent())
+        }
+        return unique(folders)
+    }
+
+    /// The folders to watch for pictures that other apps took, and the names
+    /// to take there. A folder is watched once, and every app that is turned
+    /// on is looked for in it.
+    static func watchPlan() -> [(folder: URL, prefixes: Set<String>)] {
+        watchPlan(for: enabled())
+    }
+
+    /// The same, for the given apps.
+    static func watchPlan(for apps: [CaptureApp]) -> [(folder: URL, prefixes: Set<String>)] {
+        var byPath: [String: (folder: URL, prefixes: Set<String>)] = [:]
+        for app in apps {
+            for folder in app.folders {
+                let key = folder.standardizedFileURL.path
+                var entry = byPath[key] ?? (folder: folder, prefixes: [])
+                entry.prefixes.formUnion(app.prefixes)
+                byPath[key] = entry
+            }
+        }
+        return byPath.values.sorted { $0.folder.path < $1.folder.path }
+    }
+
     // MARK: Reading what the apps say
+
+    /// The names an app gives its files: the ones it names after itself, the
+    /// ones it keeps its own way, and what its settings say.
+    static func prefixes(name: String, extra: [String], settings: [String: String]) -> [String] {
+        var prefixes = namedPrefixes(name) + extra
+        if let path = settings["quick_save_path"], !path.isEmpty {
+            let expanded = (path as NSString).expandingTildeInPath
+            if let prefix = patternPrefix(URL(fileURLWithPath: expanded).lastPathComponent) {
+                prefixes.append(prefix)
+            }
+        }
+        if let pattern = settings["file_name_pattern"], let prefix = patternPrefix(pattern) {
+            prefixes.append(prefix)
+        }
+        return unique(prefixes)
+    }
+
+    /// The names an app gives its files when it names them after itself:
+    /// `Snipaste 2026-11-06.png`, `Snipaste_2026-11-06.png`. The separator is
+    /// part of the name, so `Kap` does not take `Kaplan.jpg`.
+    static func namedPrefixes(_ name: String) -> [String] {
+        [" ", "_", "-"].map { name + $0 }
+    }
 
     /// Whether an app with this bundle name is installed.
     private static func isInstalled(_ appName: String) -> Bool {

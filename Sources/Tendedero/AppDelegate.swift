@@ -195,23 +195,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             extra.start()
             folderWatchers.append(extra)
         }
-        // The folders another screenshot app saves to. Its files carry no tag
-        // from macOS, so only the names that app gives are taken.
-        var watched = Set([watcher.folder.standardizedFileURL.path,
-                           ScreenshotWatcher.desktop.standardizedFileURL.path])
+        // The folders other screenshot apps save to. Their files carry no tag
+        // from macOS, so only the names those apps give are taken.
+        // A folder is watched once, so the ones that are watched already are
+        // left out: the folder macOS saves to, the Desktop when inbox mode
+        // puts a watcher there, and the folders the user added.
+        var watched = Set([watcher.folder.standardizedFileURL.path])
+        if safetyWatcher != nil {
+            watched.insert(ScreenshotWatcher.desktop.standardizedFileURL.path)
+        }
         for folder in Self.extraFolders { watched.insert(folder.standardizedFileURL.path) }
-        for app in CaptureApps.enabled() {
-            for folder in app.folders {
-                let path = folder.standardizedFileURL.path
-                guard !watched.contains(path) else { continue }
-                watched.insert(path)
-                let capture = ScreenshotWatcher(
-                    folder: folder, accepts: .named(Set(app.prefixes)),
-                    onNew: { [weak self] url in self?.hangCapture(url) },
-                    onChange: { [weak self] in self?.line.prune() })
-                capture.start()
-                captureWatchers.append(capture)
-            }
+        for plan in CaptureApps.watchPlan() {
+            let path = plan.folder.standardizedFileURL.path
+            guard !watched.contains(path) else { continue }
+            watched.insert(path)
+            let capture = ScreenshotWatcher(
+                folder: plan.folder, accepts: .named(plan.prefixes),
+                onNew: { [weak self] url in self?.hangCapture(url) },
+                onChange: { [weak self] in self?.line.prune() })
+            capture.start()
+            captureWatchers.append(capture)
         }
     }
 
